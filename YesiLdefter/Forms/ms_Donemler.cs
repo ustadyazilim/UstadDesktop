@@ -228,7 +228,7 @@ namespace YesiLdefter
                     var item = new StudentDataModel();
 
                     item.KURSMAIL = t.Set(v.tMainFirm.eSrcEnt_KursKodu, v.tMainFirm.FirmCode, v.tMainFirm.DatabaseName);
-                    item.PASS = v.tMainFirm.eSrcEnt_Pass;
+                    item.PASS = "test"; //v.tMainFirm.eSrcEnt_Pass;
                     item.TC = row["Lkp_TcNo"].ToString();
                     item.ADI = row["Lkp_Adi"].ToString();
                     item.SOYADI = row["Lkp_Soyadi"].ToString();
@@ -237,7 +237,7 @@ namespace YesiLdefter
                     item.ILCE = "";
                     item.ADRES = row["Lkp_Adres"].ToString();
                     item.GSM = row["Lkp_CepTelefonu"].ToString();
-                    item.IMG = null;
+                    item.IMG = "no-image-given";
                     item.BELGE = row["Lkp_IstenenSertifikaTipi"].ToString();
                     item.CINSIYET = row["Lkp_CinsiyetTipi"].ToString();
                     item.BAKIYE = 0;
@@ -273,6 +273,7 @@ namespace YesiLdefter
                     var response = client.PostAsync("/api/esrc-external-data/sync-batch", content).GetAwaiter().GetResult();
 
                     string responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    
                     if (!response.IsSuccessStatusCode)
                     {
                         MessageBox.Show($"e-src senkronizasyon hatası: HTTP {(int)response.StatusCode}\n{responseBody}", "e-src", MessageBoxButtons.OK, MessageBoxIcon.Error);

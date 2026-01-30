@@ -6,6 +6,7 @@ using DevExpress.XtraEditors;
 using Tkn_Variable;
 using Tkn_ToolBox;
 using Tkn_Save;
+using Tkn_UstadAPI;
 
 namespace YesiLdefter.Codes
 {
@@ -141,8 +142,7 @@ namespace YesiLdefter.Codes
 
         private string GetBaseUrl()
         {
-            // Match ms_WhatsApp default dev URL; you can later centralize this if needed.
-            return "http://143.198.228.153:8080/api";
+            return tApiConfig.GetWhatsAppApiBaseUrl();
         }
     }
 }

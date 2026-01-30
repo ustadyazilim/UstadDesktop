@@ -379,7 +379,7 @@
     if (API_BASE_URL === '{{api-base-url}}' || !API_BASE_URL || API_BASE_URL.trim() === '') {
       console.warn('[FirmSelect] API_BASE_URL token not replaced or empty, using fallback');
       // Fallback to localhost (.NET API)
-      API_BASE_URL = 'http://143.198.228.153:5000/';
+      API_BASE_URL = 'http://localhost:5001/';
     }
     
     // Remove trailing slash if present

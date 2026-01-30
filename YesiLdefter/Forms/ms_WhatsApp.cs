@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using YesiLdefter.Codes;
 using Tkn_Variable;
+using Tkn_UstadAPI;
 using System.Net.Http;
 
 namespace YesiLdefter.Forms
@@ -21,10 +22,7 @@ namespace YesiLdefter.Forms
         private string _selectedUserPhone;
         private string _selectedUserName;
         private DateTime _lastRefresh;
-        private const int REFRESH_INTERVAL = 10000; 
-
-        private const string DEV_BASE_URL = "http://localhost:8080";
-        private const string PROD_BASE_URL = "http://143.198.228.153:8080/api";
+        private const int REFRESH_INTERVAL = 10000;
 
         public ms_WhatsApp()
         {
@@ -55,9 +53,10 @@ namespace YesiLdefter.Forms
                 this.DialogResult = DialogResult.Cancel;
                 return;
             }
-            // Set default environment to Dev
-            comboBoxEnvironment.SelectedIndex = 0;
-            InitializeApiClient(DEV_BASE_URL);
+            // Sync combo with centralized environment (Development = 0, Production = 1)
+            bool isProd = string.Equals(tApiConfig.GetEnvironment(), tApiConfig.ENV_PRODUCTION, StringComparison.OrdinalIgnoreCase);
+            comboBoxEnvironment.SelectedIndex = isProd ? 1 : 0;
+            InitializeApiClient(tApiConfig.GetWhatsAppApiBaseUrl());
             
             // Initialize status bar
             whatsAppStatusBar.UpdateStatus("Başlatılıyor...", Color.Gray);
@@ -506,8 +505,9 @@ namespace YesiLdefter.Forms
         {
             if (comboBoxEnvironment.SelectedIndex < 0) return;
 
-            var baseUrl = comboBoxEnvironment.SelectedIndex == 0 ? DEV_BASE_URL : PROD_BASE_URL;
-            InitializeApiClient(baseUrl);
+            bool isProd = comboBoxEnvironment.SelectedIndex == 1;
+            tApiConfig.SetEnvironment(isProd ? tApiConfig.ENV_PRODUCTION : tApiConfig.ENV_DEVELOPMENT);
+            InitializeApiClient(tApiConfig.GetWhatsAppApiBaseUrl());
 
             await RefreshDataAsync();
         }

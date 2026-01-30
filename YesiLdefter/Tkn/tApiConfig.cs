@@ -7,23 +7,85 @@ namespace Tkn_UstadAPI
     /// <summary>
     /// API Configuration Helper
     /// NOTE(@Janberk): Centralized configuration management for API settings.
-    /// Stores API base URL and JWT key in Windows Registry for runtime configuration.
+    /// Stores Environment (Development/Production), API base URL and JWT key in Windows Registry.
+    /// Development: Ustad API localhost:5001, WhatsApp localhost:8080.
+    /// Production: Ustad API 143.198.228.153:8080, WhatsApp 143.198.228.153:8080/api.
     /// </summary>
     public static class tApiConfig
     {
+        private const string REGISTRY_KEY_ENVIRONMENT = "Environment";
         private const string REGISTRY_KEY_API_BASE_URL = "ApiBaseUrl";
         private const string REGISTRY_KEY_JWT_KEY = "JwtKey";
+
+        public const string ENV_DEVELOPMENT = "Development";
+        public const string ENV_PRODUCTION = "Production";
+
+        // Development: Ustad API (auth, firms, etc.)
+        private const string DEV_API_BASE_URL = "http://localhost:5001";
+        // Production: Ustad API (same host as WhatsApp)
+        private const string PROD_API_BASE_URL = "http://143.198.228.153:8080";
+        // Development: WhatsApp integration API
+        private const string DEV_WHATSAPP_BASE_URL = "http://localhost:8080";
+        // Production: WhatsApp integration API
+        private const string PROD_WHATSAPP_BASE_URL = "http://143.198.228.153:8080/api";
+
         // Default values (fallback if not in registry or environment)
-        // NOTE: Prefer environment variables; these are non-secret placeholders to avoid startup crashes.
-        // Env vars:
-        //   USTAD_API_BASE_URL (e.g., http://localhost:5001)
-        //   USTAD_JWT_KEY      (must match API Jwt:Key)
+        // Env vars: USTAD_API_BASE_URL, USTAD_JWT_KEY, USTAD_ENVIRONMENT (Development|Production)
         private static readonly string DEFAULT_API_BASE_URL =
-            Environment.GetEnvironmentVariable("USTAD_API_BASE_URL") ?? "http://143.198.228.153:5000/";
+            Environment.GetEnvironmentVariable("USTAD_API_BASE_URL") ?? "http://localhost:5001/";
         private static readonly string DEFAULT_JWT_KEY =
             Environment.GetEnvironmentVariable("USTAD_JWT_KEY") ?? string.Empty;
+
         /// <summary>
-        /// Get API base URL from registry or return default
+        /// Get current environment: Development or Production
+        /// </summary>
+        public static string GetEnvironment()
+        {
+            try
+            {
+                var reg = new tRegistry();
+                var value = reg.getRegistryValue(REGISTRY_KEY_ENVIRONMENT);
+                if (value != null && !string.IsNullOrWhiteSpace(value.ToString()))
+                {
+                    var env = value.ToString().Trim();
+                    if (env.Equals(ENV_PRODUCTION, StringComparison.OrdinalIgnoreCase))
+                        return ENV_PRODUCTION;
+                    return ENV_DEVELOPMENT;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error reading Environment from registry: {ex.Message}");
+            }
+            var envVar = Environment.GetEnvironmentVariable("USTAD_ENVIRONMENT");
+            if (!string.IsNullOrWhiteSpace(envVar) && envVar.Equals(ENV_PRODUCTION, StringComparison.OrdinalIgnoreCase))
+                return ENV_PRODUCTION;
+            return ENV_DEVELOPMENT;
+        }
+
+        /// <summary>
+        /// Set environment (Development or Production) in registry
+        /// </summary>
+        public static void SetEnvironment(string environment)
+        {
+            if (string.IsNullOrWhiteSpace(environment))
+                throw new ArgumentException("Environment cannot be empty", nameof(environment));
+            var normalized = environment.Trim().Equals(ENV_PRODUCTION, StringComparison.OrdinalIgnoreCase)
+                ? ENV_PRODUCTION : ENV_DEVELOPMENT;
+            try
+            {
+                var reg = new tRegistry();
+                reg.SetUstadRegistry(REGISTRY_KEY_ENVIRONMENT, normalized);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error writing Environment to registry: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Get Ustad API base URL (auth, firms, core). Uses Environment when ApiBaseUrl is not overridden in registry.
         /// </summary>
         public static string GetApiBaseUrl()
         {
@@ -33,18 +95,28 @@ namespace Tkn_UstadAPI
                 var value = reg.getRegistryValue(REGISTRY_KEY_API_BASE_URL);
                 if (value != null && !string.IsNullOrWhiteSpace(value.ToString()))
                 {
-                    return value.ToString().Trim();
+                    return value.ToString().Trim().TrimEnd('/');
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error reading API base URL from registry: {ex.Message}");
             }
-            
-            return DEFAULT_API_BASE_URL;
+            bool isProd = GetEnvironment().Equals(ENV_PRODUCTION, StringComparison.OrdinalIgnoreCase);
+            return isProd ? PROD_API_BASE_URL : (DEFAULT_API_BASE_URL?.Trim().TrimEnd('/') ?? DEV_API_BASE_URL);
         }
+
         /// <summary>
-        /// Set API base URL in registry
+        /// Get WhatsApp integration API base URL based on current Environment
+        /// </summary>
+        public static string GetWhatsAppApiBaseUrl()
+        {
+            bool isProd = GetEnvironment().Equals(ENV_PRODUCTION, StringComparison.OrdinalIgnoreCase);
+            return isProd ? PROD_WHATSAPP_BASE_URL : DEV_WHATSAPP_BASE_URL;
+        }
+
+        /// <summary>
+        /// Set API base URL in registry (optional override; when set, GetApiBaseUrl returns this instead of environment-derived URL)
         /// </summary>
         public static void SetApiBaseUrl(string apiBaseUrl)
         {
@@ -115,17 +187,22 @@ namespace Tkn_UstadAPI
 
         /// <summary>
         /// Initialize default API configuration if not already set
-        /// NOTE(@Janberk): Call this during application startup to ensure defaults are set
+        /// Sets Environment to Development, optional ApiBaseUrl override, and JWT key.
         /// </summary>
         public static void InitializeDefaults()
         {
             try
             {
                 var reg = new tRegistry();
+                var env = reg.getRegistryValue(REGISTRY_KEY_ENVIRONMENT);
+                if (env == null || string.IsNullOrWhiteSpace(env.ToString()))
+                {
+                    SetEnvironment(ENV_DEVELOPMENT);
+                }
                 var apiUrl = reg.getRegistryValue(REGISTRY_KEY_API_BASE_URL);
                 if (apiUrl == null || string.IsNullOrWhiteSpace(apiUrl.ToString()))
                 {
-                    SetApiBaseUrl(DEFAULT_API_BASE_URL);
+                    SetApiBaseUrl(DEV_API_BASE_URL);
                 }
                 var jwtKey = reg.getRegistryValue(REGISTRY_KEY_JWT_KEY);
                 if (jwtKey == null || string.IsNullOrWhiteSpace(jwtKey.ToString()))
@@ -140,12 +217,20 @@ namespace Tkn_UstadAPI
         }
 
         /// <summary>
-        /// Reset API base URL to default (localhost:5001)
-        /// Use this to override any production URL stored in registry
+        /// Reset to Development: set Environment to Development and clear API base URL override
         /// </summary>
         public static void ResetApiBaseUrlToDefault()
         {
-            SetApiBaseUrl(DEFAULT_API_BASE_URL);
+            SetEnvironment(ENV_DEVELOPMENT);
+            try
+            {
+                var reg = new tRegistry();
+                reg.SetUstadRegistry(REGISTRY_KEY_API_BASE_URL, DEV_API_BASE_URL);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error resetting API base URL: {ex.Message}");
+            }
         }
     }
 }
