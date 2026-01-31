@@ -88,27 +88,50 @@ namespace YesiLdefter.Codes
             }, "GetThread");
         }
 
+        /// <summary>
+        /// Thrown when the API returns 429 Too Many Requests. RetryAfterSeconds is from Retry-After header or default 5.
+        /// </summary>
+        public class WhatsAppRateLimitException : Exception
+        {
+            public int RetryAfterSeconds { get; }
+
+            public WhatsAppRateLimitException(int retryAfterSeconds = 5)
+                : base($"Rate limit reached. Retry after {retryAfterSeconds}s.")
+            {
+                RetryAfterSeconds = retryAfterSeconds;
+            }
+        }
+
         public async Task<SendMessageResponse> SendMessage(string userPhone, string message, bool isAI = false)
         {
-            return await ExecuteApiCall(async () =>
+            var url = $"{_baseUrl}{API_PATH}/send";
+            var payload = new
             {
-                var url = $"{_baseUrl}{API_PATH}/send";
-                var payload = new
-                {
-                    userPhone = NormalizePhone(userPhone),
-                    message = message,
-                    isAI = isAI
-                };
+                userPhone = NormalizePhone(userPhone),
+                message = message,
+                isAI = isAI
+            };
 
-                var json = JsonConvert.SerializeObject(payload, GetJsonSettings());
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var json = JsonConvert.SerializeObject(payload, GetJsonSettings());
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                var response = await _httpClient.PostAsync(url, content);
-                response.EnsureSuccessStatusCode();
+            var response = await _httpClient.PostAsync(url, content).ConfigureAwait(false);
 
-                var responseJson = await response.Content.ReadAsStringAsync();
-                return JsonConvert.DeserializeObject<SendMessageResponse>(responseJson, GetJsonSettings());
-            }, "SendMessage");
+            if (response.StatusCode == (System.Net.HttpStatusCode)429)
+            {
+                int retryAfter = 5;
+                if (response.Headers.RetryAfter?.Delta.HasValue == true)
+                    retryAfter = (int)response.Headers.RetryAfter.Delta.Value.TotalSeconds;
+                else if (response.Headers.RetryAfter?.Date.HasValue == true)
+                    retryAfter = Math.Max(1, (int)(response.Headers.RetryAfter.Date.Value - DateTimeOffset.UtcNow).TotalSeconds);
+                if (retryAfter < 1) retryAfter = 5;
+                throw new WhatsAppRateLimitException(retryAfter);
+            }
+
+            response.EnsureSuccessStatusCode();
+
+            var responseJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            return JsonConvert.DeserializeObject<SendMessageResponse>(responseJson, GetJsonSettings());
         }
 
         public async Task<int> GetUnreadCount()
@@ -147,20 +170,28 @@ namespace YesiLdefter.Codes
         {
             try
             {
-                return await ExecuteApiCall(async () =>
+                var url = $"{_baseUrl}{API_PATH}/session/status";
+                var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
-                    var url = $"{_baseUrl}{API_PATH}/session/status";
-                    var response = await _httpClient.GetAsync(url);
-                    response.EnsureSuccessStatusCode();
+                    // 404 = session not found; backend may auto-create on next call. Surface as INITIALIZING so UI shows orange "Initializing..."
+                    return "INITIALIZING";
+                }
 
-                    var json = await response.Content.ReadAsStringAsync();
-                    var result = JsonConvert.DeserializeObject<Dictionary<string, object>>(json, GetJsonSettings());
+                response.EnsureSuccessStatusCode();
 
-                    if (result != null && result.ContainsKey("status"))
-                        return result["status"]?.ToString() ?? "UNKNOWN";
+                var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var result = JsonConvert.DeserializeObject<Dictionary<string, object>>(json, GetJsonSettings());
 
-                    return "UNKNOWN";
-                }, "GetSessionStatus");
+                if (result != null && result.ContainsKey("status"))
+                    return result["status"]?.ToString() ?? "UNKNOWN";
+
+                return "UNKNOWN";
+            }
+            catch (HttpRequestException ex) when (ex.Message?.Contains("404") == true)
+            {
+                return "INITIALIZING";
             }
             catch
             {
@@ -406,6 +437,12 @@ namespace YesiLdefter.Codes
 
         [JsonProperty("userName")]
         public string UserName { get; set; }
+
+        [JsonProperty("lastMessageAt")]
+        public string LastMessageAt { get; set; }
+
+        [JsonProperty("onWhatsApp")]
+        public bool OnWhatsApp { get; set; }
 
         [JsonProperty("messages")]
         public List<WhatsAppMessage> Messages { get; set; }
